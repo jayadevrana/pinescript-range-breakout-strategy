@@ -1,0 +1,406 @@
+//@version=5
+strategy("Range Breakout",overlay = true)
+
+
+start_year = input(2024)
+start_month = input(11)
+start_date = input(12)
+start_time = input(09)
+start_min = input(15)
+
+nt= 2//input.int(title='target per session', defval=2)
+nt1= 2//input.int(title='stop loss per session', defval=2)
+
+
+
+InSession(sess) =>
+    na(time(timeframe.period, sess)) == false
+sessionHours = input.session(defval="0915-1500", title="Session  Hours")
+weekendsStr = ":1234567" 
+bgcolor(InSession(sessionHours + weekendsStr) ? color.rgb(82, 255, 85, 82) : na, title="Session Hours")//, transp=85)
+sec=InSession(sessionHours + weekendsStr)
+
+start = timestamp(start_year, start_month, start_date,start_time,start_min) == time ? 1 : 0
+startt = false
+startt := startt[1]
+if start
+    startt := true
+
+if not sec
+    startt := false
+
+
+high_range = input(52273.00,"Upper Resistance")
+low_range = input(51927.0,"Lower Resistance")
+
+high_range1 = input(51119.00,"Upper Supprt")
+low_range1 = input(50894.0,"Lower Support")
+
+
+
+
+
+
+long_trades = false
+long_trades := long_trades[1]
+
+short_trades = false
+short_trades := short_trades[1]
+
+
+if high > low_range and startt and sec
+    short_trades := true
+    long_trades := false
+
+
+if low < high_range1 and startt and sec
+    long_trades := true
+    short_trades := false
+
+if not sec
+    short_trades := false
+    long_trades := false
+
+
+if close < low_range1 or high > high_range
+    short_trades := false
+    long_trades := false
+    startt := false
+
+// plotshape(short_trades , color = color.red)
+// plotshape(long_trades , color = color.green)
+
+
+up = plot(startt ? high_range : na,color = color.rgb(33, 149, 243, 68))
+dn = plot(startt ? low_range : na,color = color.rgb(33, 149, 243, 68))
+
+fill(up,dn, color = color.rgb(33, 149, 243, 68))
+
+up1 = plot(startt ? high_range1 : na,color = #f3212135)
+dn1 = plot(startt ? low_range1 : na,color = #f3212135)
+
+fill(up1,dn1, color = #f3212135)
+
+buy1 = long_trades and startt and sec
+sell1 = short_trades and startt and sec
+
+
+
+buffer = input(3)
+
+long_last1 = false
+short_last1 = false
+
+long_last1 := nz(long_last1[1])
+short_last1 := nz(short_last1[1])
+
+
+
+long1 = false
+long1 := nz(long1[1])
+
+short1 = false
+short1 := nz(short1[1])
+
+long_wait1 = false
+long_wait1 := nz(long_wait1[1])
+
+short_wait1 = false
+short_wait1 := nz(short_wait1[1])
+
+low_forming = sell1  //and not short_last1
+high_forming = buy1  //and not long_last1
+
+entry_p = 0.0
+entry_p := nz(entry_p[1])
+
+if low_forming
+    entry_p := low - buffer
+    short_wait1 := true
+    long_wait1 := false
+    long_wait1
+
+if high_forming
+    entry_p := high + buffer
+    long_wait1 := true
+    short_wait1 := false
+    short_wait1
+
+buy = long_wait1 and ta.crossover(high, entry_p)
+sell = short_wait1 and ta.crossunder(low, entry_p)
+
+
+if buy
+    long1 := true
+    long_wait1 := false
+    short1 := false
+    long_last1 := true
+    short_last1 := false
+    short_last1
+
+if sell
+    short1 := true
+    short_wait1 := false
+    long1 := false
+    long_last1 := false
+    short_last1 := true
+    short_last1
+
+// plot(long_wait1 and strategy.position_size > 0 ? entry_p : na, color=color.new(color.green, 0), linewidth=2, style=plot.style_linebr)
+// plot(short_wait1  and strategy.position_size < 0? entry_p : na, color=color.new(color.red, 0), linewidth=2, style=plot.style_linebr)
+
+
+//barcolor(buy1 or sell1 ? color.yellow : na )
+
+Stop = input(100.0, title='Stop Loss')
+
+ProfitPerc = input(defval=100.0, title='TARGET')
+
+
+long_short = 0
+long_last = buy and (nz(long_short[1]) == 0 or nz(long_short[1]) == -1)
+short_last = sell and (nz(long_short[1]) == 0 or nz(long_short[1]) == 1)
+long_short := long_last ? 1 : short_last ? -1 : long_short[1]
+
+
+
+
+///////////////
+/////////
+// The Trailing Stop Code
+
+TRAILING_METHOD = 'POINTS'//input.string('POINTS',"TRAILING METHOD",options = ['POINTS','PERCENTAGE'])
+
+trailPerc = input.float(title='Trailing Stop', minval=0.0, step=0.1, defval=5)  //* 0.01
+
+//detect what was last signal (long or short)
+
+trailPerc1 = 0.00
+trailPerc2 = 0.00
+
+
+if TRAILING_METHOD == 'POINTS' 
+    trailPerc1 := close -  trailPerc
+    trailPerc2 := close +  trailPerc
+
+if TRAILING_METHOD == 'PERCENTAGE'
+    trailPerc1 := close * (1 - trailPerc/100)
+    trailPerc2 := close * (1 + trailPerc/100)
+
+//calculate tsl position
+longStopPrice = 0.0
+shortStopPrice = 0.0
+longStopPrice := if strategy.position_size > 0
+    stopValue = trailPerc1// (1 - trailPerc))
+    math.max(stopValue, longStopPrice[1])
+else
+    0
+shortStopPrice := if strategy.position_size < 0
+    stopValue = trailPerc2  //* (1 + trailPerc)
+    math.min(stopValue, shortStopPrice[1])
+else
+    999999
+
+//plot tsl
+plot(strategy.position_size > 0 ? longStopPrice : na, style=plot.style_linebr, color=color.new(color.lime, 0), linewidth=1, title='Long Trailing Stop') 
+plot(strategy.position_size < 0 ? shortStopPrice : na, style=plot.style_linebr, color=color.new(color.red, 0), linewidth=1, title='Short Trailing Stop')  
+
+//remove first bar for SL/TP (you can't enter a trade at bar close THEN hit your SL on that same bar)
+longBar1 = ta.barssince(long_last)
+longBar2 = longBar1 >= 1 ? true : false
+shortBar1 = ta.barssince(short_last)
+shortBar2 = shortBar1 >= 1 ? true : false
+
+//check for TSL hit during a bar
+longTSLhit = long_short == 1 and longBar2 and low < longStopPrice[1]
+//plotshape(longTSLhit, style=shape.labelup, location=location.belowbar, color=color.new(color.gray, 0), size=size.tiny, title='Long TSL', text='Long TSL', textcolor=color.new(color.white, 0))  //4
+shortTSLhit = long_short == -1 and shortBar2 and high > shortStopPrice[1]
+//plotshape(shortTSLhit, style=shape.labeldown, location=location.abovebar, color=color.new(color.gray, 0), size=size.tiny, title='Short TSL', text='Short TSL', textcolor=color.new(color.white, 0))  //5
+
+//reset long_short if SL/TP hit during bar
+long_short := (long_short == 1 or long_short == 0) and longBar2 and longTSLhit ? 0 : (long_short == -1 or long_short == 0) and shortBar2 and shortTSLhit ? 0 : long_short
+//
+
+//calculate if TSL has changed from last bar
+longDiff = long_short == 1 and longBar2 and longStopPrice != longStopPrice[1] ? true : false
+shortDiff = long_short == -1 and shortBar2 and shortStopPrice != shortStopPrice[1] ? true : false
+
+
+
+
+long_entered = false
+long_entered := long_entered[1]
+
+short_entered = false
+short_entered := short_entered[1]
+
+
+longPrice = strategy.position_avg_price//ta.valuewhen(buy and not long_entered, close, 0)
+
+
+shortPrice =  strategy.position_avg_price//ta.valuewhen(sell and not short_entered, close, 0)
+
+
+
+
+longStop = longPrice - Stop
+shortStop =  shortPrice + Stop
+
+
+
+longTake = longPrice + ProfitPerc
+shortTake = shortPrice - ProfitPerc
+
+plot(strategy.position_size > 0 ? longStop : na, style=plot.style_linebr, color=color.new(color.red, 0), linewidth=1, title='Long Fixed SL')
+plot(strategy.position_size < 0 ? shortStop : na, style=plot.style_linebr, color=color.new(color.red, 0), linewidth=1, title='Short Fixed SL')
+plot(strategy.position_size > 0 ? longTake : na, style=plot.style_linebr, color=color.new(color.navy, 0), linewidth=1, title='Long Fixed TP')
+plot(strategy.position_size < 0 ? shortTake : na, style=plot.style_linebr, color=color.new(color.navy, 0), linewidth=1, title='Short Fixed TP')
+
+
+// longBar11 = ta.barssince(long_last)
+// longBar2 = longBar1 >= 1 ? true : false
+// shortBar1 = ta.barssince(short_last)
+// shortBar2 = shortBar1 >= 1 ? true : false
+
+longSLhit = long_short == 1 and longBar2 and low < longStop
+
+if((strategy.position_size > 0 ) and  not sec)
+    longSLhit := true
+
+//plotshape(longSLhit and not(sell and not short_entered and long_entered), style=shape.labelup, location=location.belowbar, color=color.new(color.gray, 0), size=size.tiny, title='Stop Loss', text='Long SL', textcolor=color.new(color.white, 0))
+shortSLhit = long_short == -1 and shortBar2 and high > shortStop
+
+
+if((strategy.position_size < 0 ) and not sec)
+    shortSLhit := true
+
+//plotshape(shortSLhit and not(buy and not long_entered and short_entered), style=shape.labeldown, location=location.abovebar, color=color.new(color.gray, 0), size=size.tiny, title='Stop Loss', text='Short SL', textcolor=color.new(color.white, 0))
+
+
+longTPhit = long_short == 1 and longBar2 and high > longTake
+//plotshape(longTPhit, style=shape.labeldown, location=location.abovebar, color=color.new(color.navy, 0), size=size.tiny, title='Target', text='Long TP', textcolor=color.new(color.white, 0))
+shortTPhit = long_short == -1 and shortBar2 and low < shortTake
+//plotshape(shortTPhit, style=shape.labelup, location=location.belowbar, color=color.new(color.navy, 0), size=size.tiny, title='Target', text='Short TP', textcolor=color.new(color.white, 0))
+
+long_short := (long_short == 1 or long_short == 0) and longBar2 and (longSLhit or longTPhit) ? 0 : (long_short == -1 or long_short == 0) and shortBar2 and (shortSLhit or shortTPhit) ? 0 : long_short
+
+
+// plotshape(buy and not long_entered, color=color.new(color.green, 0), style=shape.labelup, text='Buy', textcolor=color.new(color.white, 0), location=location.belowbar)
+// plotshape(sell and not short_entered, color=color.new(color.red, 0), style=shape.labeldown, text='Sell', textcolor=color.new(color.white, 0), location=location.abovebar)
+
+// alertcondition(buy and not long_entered,"Buy")
+// alertcondition(sell and not short_entered,"sell")
+
+// plotshape(buy and not(long_entered) and (short_entered), color = color.green , style = shape.labelup , text = "FA Buy" , textcolor = color.white , location = location.belowbar)
+// plotshape(sell and not(short_entered)  and (long_entered), color = color.red , style = shape.labeldown , text = "FA Sell" , textcolor = color.white , location = location.abovebar)
+
+if longStopPrice > longStop
+    longStop := longStopPrice
+
+
+if shortStopPrice < shortStop
+    shortStop := shortStopPrice
+
+maxTradesPerDay = input.int(2, title="Max Trades per Day")
+
+var int tradesTodayBuy = 0
+var int tradesTodaySell = 0
+
+
+newDay = ta.change(time("D"))
+if newDay
+    tradesTodayBuy := 0 
+    tradesTodaySell := 0
+
+ent = ""
+intradayclose = ""
+
+
+ts = input('BANKNIFTY24DEC', 'TRADE SYMBOL',group = '====================DHANHQ====================')
+exchange =  input.string('NFO', 'EXCHANGE', options=['NSE', 'NFO', 'MCX', 'OTHER'],group = '====================DHANHQ====================')
+order_type = input.string('INTRADAY', 'Order_Type', options=['INTRADAY', 'NRML'],group = '====================DHANHQ====================')
+
+nearby = input('100', 'NEAR BY',group = '====================DHANHQ====================')
+atmotm = input('+0', 'ATM OR OTM FOR CALL',group = '====================DHANHQ====================')
+atmotm1 = input('-0', 'ATM OR OTM FOR PUT',group = '====================DHANHQ====================')
+    
+quantity = input(15,group = '====================DHANHQ====================')
+qn = quantity
+
+buy_alert = ""
+sell_alert = ""
+exit_alert = ""
+
+
+buy_alert := '[{"AS":"'+ts+'","P":"'+order_type+'","E":"NFO","AT":"DHANHQ"},{"TT":"BUY","E":"'+exchange+'","TS":"'+ts+'{'+str.tostring(close)+'}CE","Q":"'+str.tostring(qn)+'","OT":"MARKET","P":"'+order_type+'","VL":"DAY","NEAR":"'+nearby+'","CAL":"'+atmotm+'","AT":"DHANHQ"}]'
+sell_alert := '[{"AS":"'+ts+'","P":"'+order_type+'","E":"NFO","AT":"DHANHQ"},{"TT":"BUY","E":"'+exchange+'","TS":"'+ts+'{'+str.tostring(close)+'}PE","Q":"'+str.tostring(qn)+'","OT":"MARKET","P":"'+order_type+'","VL":"DAY","NEAR":"'+nearby+'","CAL":"'+atmotm1+'","AT":"DHANHQ"}]'
+exit_alert := '[{"AS":"'+ts+'","E":"'+exchange+'","P":"NRML","AT":"DHANHQ"}]'
+
+
+
+
+
+
+if(buy1 and tradesTodayBuy < maxTradesPerDay)
+    strategy.entry("buy",strategy.long,stop = high,alert_message = buy_alert)
+    
+if strategy.position_size > 0 and strategy.position_size[1] < 1
+    tradesTodayBuy += 1
+    
+//strategy.exit("exit1" , "buy"  , stop = longStop)
+
+    
+strategy.exit("exit" , "buy" , limit = longTake , stop = longStop,alert_message = exit_alert)
+
+   
+if(sell1 and tradesTodaySell < maxTradesPerDay)
+    strategy.entry("sell",strategy.short,stop = low,alert_message = sell_alert)
+
+if strategy.position_size < 0 and strategy.position_size[1] > -1  
+    tradesTodaySell += 1
+    
+//strategy.exit("exit" , stop = shortStop)
+
+    
+strategy.exit("exit" , "sell" , limit = shortTake , stop = shortStop,alert_message = exit_alert)
+
+
+
+// if strategy.position_size > 0 and trend == -1
+//     strategy.close_all("STR Exit")
+
+
+// if strategy.position_size < 0 and trend == 1
+//     strategy.close_all("STR Exit")
+
+
+// alertcondition(condition=buy and  not(long_entered)  and (short_entered), title="Fully Algo Buy")
+// alertcondition(condition=sell and  not(short_entered)  and (long_entered), title="Fully Algo sell")
+
+// alertcondition(condition=buy and not long_entered, title='Buy')
+// alertcondition(condition=sell and not short_entered, title='Sell')
+
+if long_last
+    long_entered := true
+    short_entered := false
+    short_entered
+if short_last
+    short_entered := true
+    long_entered := false
+    long_entered
+
+// alertcondition(condition=(longSLhit or shortSLhit) and not(sell and not short_entered and long_entered), title='Long/Short SL')
+// //alertcondition(condition= shortSLhit and not (buy and  not(long_entered)  and (short_entered)), title="Short SL")
+
+// alertcondition(condition=longTPhit or shortTPhit, title='Long/short TP')
+
+exit = longTPhit or shortTPhit or longSLhit or shortSLhit
+alertcondition(condition=exit, title="Exit")
+
+if longSLhit or longTPhit //or strategy.position_size == 0
+    long_entered := false
+    long_entered
+
+if shortSLhit or shortTPhit //or strategy.position_size == 0
+    short_entered := false
+    short_entered
